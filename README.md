@@ -14,8 +14,6 @@ A [Base MCP](https://docs.base.org/ai-agents) custom plugin for [Hydrex](https:/
 | Read open positions (on-chain) | NFPM contract read |
 | Read portfolio + trade history | Hydrex Router API |
 
-> **On Hydrex, adding liquidity IS the staking step.** Providing liquidity via the NonfungiblePositionManager creates an active position that earns fees and rewards automatically — there is no separate gauge deposit required. Removing liquidity exits the position entirely.
-
 Write actions go through Base MCP's `send_calls` — the user approves each batch in their wallet via a single Coinbase popup.
 
 ---
@@ -181,8 +179,6 @@ All prepare endpoints return ordered-batch transactions:
 | `GET` | `/prepare/swap` | `tokenIn`, `tokenOut`, `amount`, `decimals`, `recipient`, `slippage` |
 | `GET` | `/prepare/add-liquidity` | `from`, `pool`, `token0`, `token1`, `amount0`, `amount1`, `priceLower`?, `priceUpper`? |
 | `GET` | `/prepare/remove-liquidity` | `from`, `positionId`, `pool`, `liquidityPercent`?, `slippage` |
-
-> The server also exposes `/prepare/stake`, `/prepare/unstake`, and `/prepare/claim` for protocols that use a separate gauge deposit model. These are not part of the standard Hydrex liquidity flow.
 
 ---
 
