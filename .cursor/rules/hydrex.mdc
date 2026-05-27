@@ -18,6 +18,19 @@ Hydrex is an Omni-Liquidity MetaDEX on Base — concentrated-liquidity swaps agg
 
 ---
 
+## Approval & confirmation UX
+
+After calling `send_calls`, Base MCP returns a `requestId` and presents the user with an approval link. **Do not ask the user to type "confirmed" or any other acknowledgement.** Instead:
+
+1. Tell the user clearly: "Please approve the transaction using the link above."
+2. Immediately call `get_request_status(requestId)` to begin polling.
+3. If the status is `pending`, call `get_request_status` again automatically — keep polling without prompting the user until the status is `success` or `failed`.
+4. Once resolved, report the outcome (tx hash on success, error reason on failure).
+
+The user's only required action is clicking the Coinbase approval link. Everything else is handled automatically.
+
+---
+
 ## Orchestration patterns
 
 ### Swap pattern
@@ -25,11 +38,14 @@ Hydrex is an Omni-Liquidity MetaDEX on Base — concentrated-liquidity swaps agg
 ```
 1.  get_wallets                              → address
 2.  GET /state/quote?tokenIn=...&tokenOut=...&amount=...&recipient=<address>
-      → inspect quote.amountOut, quote.priceImpact — confirm with user
+      → show user: amountOut (human-readable), priceImpact, source
+      → if priceImpact > 5%, warn user and ask to confirm before proceeding
 3.  GET /prepare/swap?tokenIn=...&tokenOut=...&amount=...&recipient=<address>
       → transactions[]
 4.  send_calls(chain="base", calls from transactions[])
-5.  get_request_status(requestId)            → confirm swap success
+      → tell user: "Please approve the transaction using the link above."
+5.  get_request_status(requestId) — poll automatically until success or failed
+      → report outcome; do NOT ask user to type anything
 ```
 
 ### Stake pattern
@@ -40,7 +56,8 @@ Hydrex is an Omni-Liquidity MetaDEX on Base — concentrated-liquidity swaps agg
 3.  GET /prepare/stake?from=<address>&gauge=<gauge>&lpToken=<lpToken>&amount=<amount>
       → transactions: [approve, stake]
 4.  send_calls(chain="base", calls from transactions[])
-5.  get_request_status(requestId)            → confirm staking success
+      → tell user: "Please approve both the token approval and stake in the link above."
+5.  get_request_status(requestId) — poll automatically until success or failed
 ```
 
 ### Unstake pattern
@@ -51,7 +68,8 @@ Hydrex is an Omni-Liquidity MetaDEX on Base — concentrated-liquidity swaps agg
 3.  GET /prepare/unstake?from=<address>&gauge=<gauge>&amount=<amount>
       → transactions: [unstake]
 4.  send_calls(chain="base", calls from transactions[])
-5.  get_request_status(requestId)
+      → tell user: "Please approve the transaction using the link above."
+5.  get_request_status(requestId) — poll automatically until success or failed
 ```
 
 ### Claim rewards pattern
@@ -61,7 +79,8 @@ Hydrex is an Omni-Liquidity MetaDEX on Base — concentrated-liquidity swaps agg
 2.  GET /prepare/claim?from=<address>&gauge=<gauge>
       → transactions: [claim]
 3.  send_calls(chain="base", calls from transactions[])
-4.  get_request_status(requestId)
+      → tell user: "Please approve the transaction using the link above."
+4.  get_request_status(requestId) — poll automatically until success or failed
 ```
 
 ---
