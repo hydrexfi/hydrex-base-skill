@@ -1,35 +1,21 @@
+---
+title: "Hydrex Plugin"
+description: "Skill plugin reference for swapping and providing liquidity on Hydrex through Base MCP."
+---
+
 # Hydrex Plugin
 
-> [!IMPORTANT]
-> ## STOP — COMPLETE ONBOARDING BEFORE USING THIS PLUGIN
->
-> Before calling any Hydrex endpoint you **MUST** complete the Base MCP onboarding flow:
-> 1. Call `get_wallets` — this confirms the user's wallet address.
-> 2. Present wallet status and the standard Base MCP disclaimer.
->
-> Every prepare endpoint requires the wallet address as the `from` or `recipient`
-> parameter. Do **not** proceed without it.
+> Complete the short Base MCP onboarding flow defined in `SKILL.md` before calling any Hydrex endpoint. The user's wallet address — required as `from` or `recipient` in every prepare call — is fetched lazily when needed.
 
-Hydrex is an Omni-Liquidity MetaDEX on Base — concentrated-liquidity swaps aggregated across 0x, OpenOcean, OKX, and KyberSwap, plus liquidity positions that earn fees and rewards automatically. Fetch unsigned calldata from the Hydrex API, then execute via Base MCP's `send_calls`.
+Hydrex is an Omni-Liquidity MetaDEX on Base — concentrated-liquidity swaps aggregated across 0x, OpenOcean, OKX, and KyberSwap, plus liquidity positions that earn fees and rewards automatically. Use the prepare server to fetch unsigned calldata, then execute via `send_calls`.
 
-**Important — liquidity = staking on Hydrex.** Adding liquidity via `/prepare/add-liquidity` creates an active position that earns immediately. There is no separate gauge deposit step. Removing liquidity via `/prepare/remove-liquidity` fully exits the position.
+**Important — liquidity = staking on Hydrex.** Adding liquidity via `/prepare/add-liquidity` creates an active earning position immediately. There is no separate gauge deposit step. Removing liquidity via `/prepare/remove-liquidity` fully exits the position.
 
 **Chain:** Base mainnet (`chainId: 8453` / `"chain": "base"`).
 
-**Fetching calldata:** the Hydrex prepare server is not on the Base MCP `web_request` allowlist. Construct all URLs as **GET** requests with parameters in the query string. If `web_request` is unavailable, ask the user to open the URL in a browser and paste the JSON response back into chat, then continue with `send_calls`.
+**Prerequisite:** The Hydrex prepare server (`http://localhost:3000` by default) must be running. It is not on the Base MCP `web_request` allowlist. Construct all prepare URLs as GET requests with parameters in the query string. If `web_request` is unavailable, ask the user to open the URL in a browser, paste the JSON response into chat, then continue with `send_calls`.
 
----
-
-## Approval & confirmation UX
-
-After calling `send_calls`, Base MCP returns a `requestId` and presents the user with an approval link. **Do not ask the user to type "confirmed" or any other acknowledgement.** Instead:
-
-1. Tell the user clearly: "Please approve the transaction using the link above."
-2. Immediately call `get_request_status(requestId)` to begin polling.
-3. If the status is `pending`, call `get_request_status` again automatically — keep polling without prompting the user until the status is `success` or `failed`.
-4. Once resolved, report the outcome (tx hash on success, error reason on failure).
-
-The user's only required action is clicking the Coinbase approval link. Everything else is handled automatically.
+**Approval UX:** After `send_calls` returns, present the approval link and immediately call `get_request_status(requestId)` to poll automatically — do not ask the user to type anything. See `../references/approval-mode.md`.
 
 ---
 

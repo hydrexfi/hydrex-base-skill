@@ -186,14 +186,6 @@ All prepare endpoints return ordered-batch transactions:
 
 ---
 
-## Supported network
-
-| Network | Chain ID |
-|---|---|
-| Base mainnet | `8453` |
-
----
-
 ## References
 
 - [Base MCP overview](https://docs.base.org/ai-agents)
