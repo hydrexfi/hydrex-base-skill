@@ -35,5 +35,3 @@ skills/base-mcp/plugins/hydrex.md   plugin spec
 server/                             prepare and state API
 .cursor/mcp.json                    Base MCP connection for Cursor
 ```
-
-Setup, endpoint reference, and build notes are in [BUILD.md](BUILD.md).

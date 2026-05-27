@@ -42,10 +42,10 @@ router.get("/quote", async (req: Request, res: Response) => {
     parsed.data;
 
   const params = new URLSearchParams({
-    tokenIn,
-    tokenOut,
+    fromTokenAddress: tokenIn,
+    toTokenAddress: tokenOut,
     amount,
-    recipient,
+    taker: recipient,
     chainId: String(CHAIN_ID),
     slippage: String(slippage),
   });

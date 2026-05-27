@@ -96,10 +96,10 @@ router.get("/swap", async (req: Request, res: Response) => {
   const amountWei = parseUnits(amount, decimals).toString();
 
   const params = new URLSearchParams({
-    tokenIn,
-    tokenOut,
+    fromTokenAddress: tokenIn,
+    toTokenAddress: tokenOut,
     amount: amountWei,
-    recipient,
+    taker: recipient,
     chainId: String(CHAIN_ID),
     slippage: String(slippage),
   });
@@ -117,16 +117,25 @@ router.get("/swap", async (req: Request, res: Response) => {
         .json({ ok: false, error: `Router API error: ${text}` });
     }
 
-    const quote = await upstream.json();
+    interface QuoteResponse {
+      amountIn?: string;
+      amountOut?: string;
+      source?: string;
+      priceImpact?: string;
+      transaction: {
+        to: string;
+        data: string;
+        value?: string;
+      };
+    }
+    const quote = (await upstream.json()) as QuoteResponse;
 
-    // The Router API returns executable tx data directly.
-    // Wrap in the ordered-batch shape Base MCP expects.
     const transactions = [
       {
         step: "swap",
-        to: quote.to,
-        data: quote.data,
-        value: quote.value ?? "0x0",
+        to: quote.transaction.to,
+        data: quote.transaction.data,
+        value: quote.transaction.value ?? "0x0",
         chainId: CHAIN_ID,
       },
     ];
@@ -134,8 +143,8 @@ router.get("/swap", async (req: Request, res: Response) => {
     return res.json({
       ok: true,
       quote: {
-        tokenIn: quote.tokenIn ?? tokenIn,
-        tokenOut: quote.tokenOut ?? tokenOut,
+        tokenIn,
+        tokenOut,
         amountIn: quote.amountIn ?? amountWei,
         amountOut: quote.amountOut,
         source: quote.source,
