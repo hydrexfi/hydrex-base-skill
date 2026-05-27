@@ -1,6 +1,30 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { encodeFunctionData, parseUnits, type Address } from "viem";
+
+const nfpmMulticallAbi = [
+  {
+    name: "multicall",
+    type: "function",
+    stateMutability: "payable",
+    inputs: [{ name: "data", type: "bytes[]" }],
+    outputs: [{ name: "results", type: "bytes[]" }],
+  },
+] as const;
+
+/**
+ * The Hydrex SDK's NonfungiblePositionManager returns `calldata: string[]`.
+ * A single-element array is used directly; multiple elements are packed into
+ * a `multicall(bytes[])` call that the NFPM handles atomically.
+ */
+function encodeNfpmCalldata(calldatas: string[]): string {
+  if (calldatas.length === 1) return calldatas[0];
+  return encodeFunctionData({
+    abi: nfpmMulticallAbi,
+    functionName: "multicall",
+    args: [calldatas as `0x${string}`[]],
+  });
+}
 import {
   NonfungiblePositionManager,
   Position,
@@ -8,6 +32,8 @@ import {
   CurrencyAmount,
   Percent,
   ChainId,
+  TickMath,
+  nearestUsableTick,
 } from "@hydrexfi/hydrex-sdk";
 import { CHAIN_ID, ROUTER_API_BASE } from "../lib/constants";
 import { fetchPool, fetchPosition, priceToTick, NFPM_ADDRESS } from "../lib/pool";
@@ -34,32 +60,12 @@ const erc20ApproveAbi = [
   },
 ] as const;
 
-const gaugeDepositAbi = [
-  {
-    name: "deposit",
-    type: "function",
-    stateMutability: "nonpayable",
-    inputs: [{ name: "amount", type: "uint256" }],
-    outputs: [],
-  },
-] as const;
-
 const gaugeGetRewardAbi = [
   {
     name: "getReward",
     type: "function",
     stateMutability: "nonpayable",
     inputs: [{ name: "account", type: "address" }],
-    outputs: [],
-  },
-] as const;
-
-const gaugeWithdrawAbi = [
-  {
-    name: "withdraw",
-    type: "function",
-    stateMutability: "nonpayable",
-    inputs: [{ name: "amount", type: "uint256" }],
     outputs: [],
   },
 ] as const;
@@ -158,111 +164,7 @@ router.get("/swap", async (req: Request, res: Response) => {
   }
 });
 
-// ─── Gauge staking ────────────────────────────────────────────────────────────
-
-/**
- * GET /prepare/stake
- *
- * Builds an ERC-20 approve + gauge deposit batch for staking LP tokens.
- * Returns two transactions that must be submitted atomically via send_calls.
- *
- * Query params:
- *   from     - wallet address holding LP tokens
- *   gauge    - gauge contract address
- *   lpToken  - LP token contract address
- *   amount   - human-readable LP token amount (e.g. "1.0")
- *   decimals - LP token decimals (default: 18)
- */
-router.get("/stake", async (req: Request, res: Response) => {
-  const schema = z.object({
-    from: addressSchema,
-    gauge: addressSchema,
-    lpToken: addressSchema,
-    amount: z.string().min(1),
-    decimals: z.coerce.number().min(0).max(18).default(18),
-  });
-
-  const parsed = schema.safeParse(req.query);
-  if (!parsed.success) {
-    return res.status(400).json({ ok: false, error: parsed.error.flatten() });
-  }
-
-  const { gauge, lpToken, amount, decimals } = parsed.data;
-  const amountWei = parseUnits(amount, decimals);
-
-  return res.json({
-    ok: true,
-    transactions: [
-      {
-        step: "approve",
-        to: lpToken,
-        data: encodeFunctionData({
-          abi: erc20ApproveAbi,
-          functionName: "approve",
-          args: [gauge, amountWei],
-        }),
-        value: "0x0",
-        chainId: CHAIN_ID,
-      },
-      {
-        step: "stake",
-        to: gauge,
-        data: encodeFunctionData({
-          abi: gaugeDepositAbi,
-          functionName: "deposit",
-          args: [amountWei],
-        }),
-        value: "0x0",
-        chainId: CHAIN_ID,
-      },
-    ],
-  });
-});
-
-/**
- * GET /prepare/unstake
- *
- * Builds a gauge withdraw transaction for removing staked LP tokens.
- *
- * Query params:
- *   from     - wallet address with staked LP tokens
- *   gauge    - gauge contract address
- *   amount   - human-readable LP token amount to withdraw
- *   decimals - LP token decimals (default: 18)
- */
-router.get("/unstake", async (req: Request, res: Response) => {
-  const schema = z.object({
-    from: addressSchema,
-    gauge: addressSchema,
-    amount: z.string().min(1),
-    decimals: z.coerce.number().min(0).max(18).default(18),
-  });
-
-  const parsed = schema.safeParse(req.query);
-  if (!parsed.success) {
-    return res.status(400).json({ ok: false, error: parsed.error.flatten() });
-  }
-
-  const { gauge, amount, decimals } = parsed.data;
-  const amountWei = parseUnits(amount, decimals);
-
-  return res.json({
-    ok: true,
-    transactions: [
-      {
-        step: "unstake",
-        to: gauge,
-        data: encodeFunctionData({
-          abi: gaugeWithdrawAbi,
-          functionName: "withdraw",
-          args: [amountWei],
-        }),
-        value: "0x0",
-        chainId: CHAIN_ID,
-      },
-    ],
-  });
-});
+// ─── Gauge rewards ────────────────────────────────────────────────────────────
 
 /**
  * GET /prepare/claim
@@ -342,6 +244,10 @@ router.get("/add-liquidity", async (req: Request, res: Response) => {
     amount1: z.string().min(1),
     priceLower: z.coerce.number().positive().optional(),
     priceUpper: z.coerce.number().positive().optional(),
+    fullRange: z
+      .enum(["true", "false", "1", "0"])
+      .transform((v) => v === "true" || v === "1")
+      .default("false"),
     slippage: z.coerce.number().min(1).max(5000).default(50),
   });
 
@@ -361,6 +267,7 @@ router.get("/add-liquidity", async (req: Request, res: Response) => {
     amount1,
     priceLower,
     priceUpper,
+    fullRange,
     slippage,
   } = parsed.data;
 
@@ -376,14 +283,22 @@ router.get("/add-liquidity", async (req: Request, res: Response) => {
     const token0 = pool.token0 as Token;
     const token1 = pool.token1 as Token;
 
-    // Default price range to ±20% of current price if not provided.
-    // currentPrice is expressed as token1 per token0.
-    const currentPrice = parseFloat(pool.token0Price.toSignificant(18));
-    const lower = priceLower ?? currentPrice * 0.8;
-    const upper = priceUpper ?? currentPrice * 1.2;
+    let tickLower: number;
+    let tickUpper: number;
 
-    const tickLower = priceToTick(lower, token0, token1, pool.tickSpacing);
-    const tickUpper = priceToTick(upper, token0, token1, pool.tickSpacing);
+    if (fullRange) {
+      tickLower = nearestUsableTick(TickMath.MIN_TICK, pool.tickSpacing);
+      tickUpper = nearestUsableTick(TickMath.MAX_TICK, pool.tickSpacing);
+    } else {
+      // Default price range to ±20% of current price if not specified.
+      // currentPrice is expressed as token1 per token0.
+      const currentPrice = parseFloat(pool.token0Price.toSignificant(18));
+      const lower = priceLower ?? currentPrice * 0.8;
+      const upper = priceUpper ?? currentPrice * 1.2;
+
+      tickLower = priceToTick(lower, token0, token1, pool.tickSpacing);
+      tickUpper = priceToTick(upper, token0, token1, pool.tickSpacing);
+    }
 
     if (tickLower >= tickUpper) {
       return res.status(400).json({
@@ -455,7 +370,7 @@ router.get("/add-liquidity", async (req: Request, res: Response) => {
         {
           step: "mint",
           to: NFPM_ADDRESS,
-          data: calldata,
+          data: encodeNfpmCalldata(calldata),
           value: `0x${BigInt(value).toString(16)}`,
           chainId: CHAIN_ID,
         },
@@ -565,7 +480,7 @@ router.get("/remove-liquidity", async (req: Request, res: Response) => {
         {
           step: "remove-liquidity",
           to: NFPM_ADDRESS,
-          data: calldata,
+          data: encodeNfpmCalldata(calldata),
           value: `0x${BigInt(value).toString(16)}`,
           chainId: CHAIN_ID,
         },

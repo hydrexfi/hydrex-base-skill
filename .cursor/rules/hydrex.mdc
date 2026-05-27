@@ -10,7 +10,9 @@
 > Every prepare endpoint requires the wallet address as the `from` or `recipient`
 > parameter. Do **not** proceed without it.
 
-Hydrex is an Omni-Liquidity MetaDEX on Base — concentrated-liquidity swaps aggregated across 0x, OpenOcean, OKX, and KyberSwap, plus gauge-based LP staking with HYDX rewards. Fetch unsigned calldata from the Hydrex API, then execute via Base MCP's `send_calls`.
+Hydrex is an Omni-Liquidity MetaDEX on Base — concentrated-liquidity swaps aggregated across 0x, OpenOcean, OKX, and KyberSwap, plus liquidity positions that earn fees and rewards automatically. Fetch unsigned calldata from the Hydrex API, then execute via Base MCP's `send_calls`.
+
+**Important — liquidity = staking on Hydrex.** Adding liquidity via `/prepare/add-liquidity` creates an active position that earns immediately. There is no separate gauge deposit step. Removing liquidity via `/prepare/remove-liquidity` fully exits the position.
 
 **Chain:** Base mainnet (`chainId: 8453` / `"chain": "base"`).
 
@@ -48,42 +50,7 @@ The user's only required action is clicking the Coinbase approval link. Everythi
       → report outcome; do NOT ask user to type anything
 ```
 
-### Stake pattern
-
-```
-1.  get_wallets                              → address
-2.  GET /state/portfolio?address=<address>   → confirm LP token balance
-3.  GET /prepare/stake?from=<address>&gauge=<gauge>&lpToken=<lpToken>&amount=<amount>
-      → transactions: [approve, stake]
-4.  send_calls(chain="base", calls from transactions[])
-      → tell user: "Please approve both the token approval and stake in the link above."
-5.  get_request_status(requestId) — poll automatically until success or failed
-```
-
-### Unstake pattern
-
-```
-1.  get_wallets                              → address
-2.  GET /state/portfolio?address=<address>   → confirm staked balance
-3.  GET /prepare/unstake?from=<address>&gauge=<gauge>&amount=<amount>
-      → transactions: [unstake]
-4.  send_calls(chain="base", calls from transactions[])
-      → tell user: "Please approve the transaction using the link above."
-5.  get_request_status(requestId) — poll automatically until success or failed
-```
-
-### Claim rewards pattern
-
-```
-1.  get_wallets                              → address
-2.  GET /prepare/claim?from=<address>&gauge=<gauge>
-      → transactions: [claim]
-3.  send_calls(chain="base", calls from transactions[])
-      → tell user: "Please approve the transaction using the link above."
-4.  get_request_status(requestId) — poll automatically until success or failed
-```
-
-### Add liquidity pattern
+### Add liquidity pattern (enter a position / stake)
 
 ```
 1.  get_wallets                              → address
@@ -103,7 +70,7 @@ The user's only required action is clicking the Coinbase approval link. Everythi
 > tell them: "I'm using a ±20% price range around the current price. You can specify a tighter or wider
 > range if you prefer."
 
-### Remove liquidity pattern
+### Remove liquidity pattern (exit a position / unstake)
 
 ```
 1.  get_wallets                              → address

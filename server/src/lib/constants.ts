@@ -61,6 +61,24 @@ export const POOL_ABI = [
     inputs: [],
     outputs: [{ name: "", type: "address" }],
   },
+  /**
+   * Algebra-style global state (replaces Uniswap V3's slot0 in Hydrex pools).
+   * Returns the current price, tick, fee, and lock status in a single call.
+   */
+  {
+    name: "globalState",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [
+      { name: "price", type: "uint160" },
+      { name: "tick", type: "int24" },
+      { name: "fee", type: "uint16" },
+      { name: "timepointIndex", type: "uint16" },
+      { name: "communityFee", type: "uint16" },
+      { name: "unlocked", type: "bool" },
+    ],
+  },
 ] as const;
 
 /**
