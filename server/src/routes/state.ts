@@ -1,6 +1,9 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { ROUTER_API_BASE, CHAIN_ID } from "../lib/constants";
+import { fetchPositionIds, fetchPosition, publicClient, NFPM_ADDRESS } from "../lib/pool";
+import { POOL_ABI } from "../lib/constants";
+import type { Address } from "viem";
 
 const router = Router();
 
@@ -113,6 +116,57 @@ router.get("/trade-history", async (req: Request, res: Response) => {
     return res.json({ ok: true, data });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Upstream error";
+    return res.status(502).json({ ok: false, error: message });
+  }
+});
+
+/**
+ * GET /state/positions
+ *
+ * Returns all open concentrated liquidity positions for a wallet by
+ * reading directly from the NonfungiblePositionManager on-chain.
+ * Use the returned positionId values with /prepare/remove-liquidity.
+ *
+ * Query params:
+ *   address - wallet address
+ */
+router.get("/positions", async (req: Request, res: Response) => {
+  const parsed = z.object({ address: addressSchema }).safeParse(req.query);
+  if (!parsed.success) {
+    return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+  }
+
+  const { address } = parsed.data;
+
+  try {
+    const tokenIds = await fetchPositionIds(address as Address);
+
+    const positions = await Promise.all(
+      tokenIds.map(async (tokenId) => {
+        const pos = await fetchPosition(tokenId);
+
+        // Derive pool address from factory via the pool contract read
+        // (token0/token1/fee are sufficient context for the plugin to identify the pool)
+        return {
+          positionId: tokenId.toString(),
+          token0: pos.token0,
+          token1: pos.token1,
+          fee: pos.fee,
+          tickLower: pos.tickLower,
+          tickUpper: pos.tickUpper,
+          liquidity: pos.liquidity.toString(),
+          tokensOwed0: pos.tokensOwed0.toString(),
+          tokensOwed1: pos.tokensOwed1.toString(),
+        };
+      })
+    );
+
+    // Filter out positions with zero liquidity (already closed)
+    const open = positions.filter((p) => p.liquidity !== "0");
+
+    return res.json({ ok: true, count: open.length, positions: open });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
     return res.status(502).json({ ok: false, error: message });
   }
 });

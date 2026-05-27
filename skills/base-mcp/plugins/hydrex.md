@@ -83,6 +83,40 @@ The user's only required action is clicking the Coinbase approval link. Everythi
 4.  get_request_status(requestId) — poll automatically until success or failed
 ```
 
+### Add liquidity pattern
+
+```
+1.  get_wallets                              → address
+2.  GET /state/positions?address=<address>   → show existing positions for context
+3.  Confirm with user: pool address, token pair, amounts, price range (or use default ±20%)
+4.  GET /prepare/add-liquidity?from=<address>&pool=<pool>&token0=<t0>&token1=<t1>
+        &decimals0=<d0>&decimals1=<d1>&amount0=<a0>&amount1=<a1>
+        [&priceLower=<p>&priceUpper=<p>]
+      → transactions: [approve-token0, approve-token1, mint]
+      → show user: position.tickLower, position.tickUpper, position.amount0, position.amount1
+5.  send_calls(chain="base", calls from transactions[])
+      → tell user: "Please approve both token allowances and the mint in the link above."
+6.  get_request_status(requestId) — poll automatically until success or failed
+```
+
+> Price range guidance: if the user does not specify a range, default to ±20% of current pool price and
+> tell them: "I'm using a ±20% price range around the current price. You can specify a tighter or wider
+> range if you prefer."
+
+### Remove liquidity pattern
+
+```
+1.  get_wallets                              → address
+2.  GET /state/positions?address=<address>   → list open positions with positionId values
+3.  Confirm which positionId and what percentage to remove (default: 100%)
+4.  GET /prepare/remove-liquidity?from=<address>&positionId=<id>&pool=<pool>
+        &decimals0=<d0>&decimals1=<d1>[&liquidityPercent=<pct>]
+      → transactions: [remove-liquidity]
+5.  send_calls(chain="base", calls from transactions[])
+      → tell user: "Please approve the transaction using the link above."
+6.  get_request_status(requestId) — poll automatically until success or failed
+```
+
 ---
 
 ## Read endpoints
@@ -156,6 +190,40 @@ GET /state/trade-history?address=<walletAddress>
 ```
 
 Returns past swaps executed through Hydrex for the wallet.
+
+---
+
+### Open liquidity positions
+
+```
+GET /state/positions?address=<walletAddress>
+```
+
+Returns all open concentrated liquidity positions owned by the wallet,
+read directly from the NonfungiblePositionManager on-chain.
+
+Response shape:
+```json
+{
+  "ok": true,
+  "count": 2,
+  "positions": [
+    {
+      "positionId": "12345",
+      "token0": "0x...",
+      "token1": "0x...",
+      "fee": 500,
+      "tickLower": -887220,
+      "tickUpper": 887220,
+      "liquidity": "1500000000000000",
+      "tokensOwed0": "0",
+      "tokensOwed1": "0"
+    }
+  ]
+}
+```
+
+Use `positionId` with `/prepare/remove-liquidity`.
 
 ---
 
@@ -290,6 +358,69 @@ Response:
   "ok": true,
   "transactions": [
     { "step": "claim", "to": "0x<gauge>", "data": "0x<getRewardCalldata>", "value": "0x0", "chainId": 8453 }
+  ]
+}
+```
+
+---
+
+### Prepare add liquidity
+
+```
+GET /prepare/add-liquidity
+```
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `from` | address | ✓ | Wallet providing liquidity |
+| `pool` | address | ✓ | Pool contract address |
+| `token0` | address | ✓ | token0 address (must match pool order) |
+| `token1` | address | ✓ | token1 address (must match pool order) |
+| `decimals0` | number | — | token0 decimals (default: 18) |
+| `decimals1` | number | — | token1 decimals (default: 18) |
+| `amount0` | string | ✓ | Desired token0 amount, human-readable |
+| `amount1` | string | ✓ | Desired token1 amount, human-readable |
+| `priceLower` | number | — | Lower price bound (token1 per token0). Defaults to −20% of current price |
+| `priceUpper` | number | — | Upper price bound (token1 per token0). Defaults to +20% of current price |
+| `slippage` | number | — | Slippage in bps (default: 50) |
+
+Response — three transactions, always in this order:
+```json
+{
+  "ok": true,
+  "position": { "tickLower": -887220, "tickUpper": 887220, "amount0": "0.05", "amount1": "100.0" },
+  "transactions": [
+    { "step": "approve-token0", "to": "0x<token0>", "data": "0x...", "value": "0x0", "chainId": 8453 },
+    { "step": "approve-token1", "to": "0x<token1>", "data": "0x...", "value": "0x0", "chainId": 8453 },
+    { "step": "mint",           "to": "0x<NFPM>",   "data": "0x...", "value": "0x0", "chainId": 8453 }
+  ]
+}
+```
+
+---
+
+### Prepare remove liquidity
+
+```
+GET /prepare/remove-liquidity
+```
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `from` | address | ✓ | Wallet that owns the position |
+| `positionId` | number | ✓ | NFT tokenId from `/state/positions` |
+| `pool` | address | ✓ | Pool contract address |
+| `decimals0` | number | — | token0 decimals (default: 18) |
+| `decimals1` | number | — | token1 decimals (default: 18) |
+| `liquidityPercent` | number | — | Percentage to remove, 1–100 (default: 100) |
+| `slippage` | number | — | Slippage in bps (default: 50) |
+
+Response:
+```json
+{
+  "ok": true,
+  "transactions": [
+    { "step": "remove-liquidity", "to": "0x<NFPM>", "data": "0x...", "value": "0x0", "chainId": 8453 }
   ]
 }
 ```
