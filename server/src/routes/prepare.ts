@@ -120,7 +120,17 @@ router.get("/swap", async (req: Request, res: Response) => {
         .json({ ok: false, error: `Router API error: ${text}` });
     }
 
-    const quote = await upstream.json();
+    const quote = (await upstream.json()) as {
+      tokenIn?: string;
+      tokenOut?: string;
+      amountIn?: string;
+      amountOut: string;
+      source?: string;
+      priceImpact?: number;
+      to: string;
+      data: string;
+      value?: string;
+    };
 
     return res.json({
       ok: true,
@@ -395,7 +405,7 @@ router.get("/add-liquidity", async (req: Request, res: Response) => {
       useFullPrecision: true,
     });
 
-    const deadline = BigInt(Math.floor(Date.now() / 1000) + 1200);
+    const deadline = (Math.floor(Date.now() / 1000) + 1200).toString();
     const slippagePct = new Percent(slippage, 10_000);
 
     const { calldata, value } = NonfungiblePositionManager.addCallParameters(
@@ -526,7 +536,7 @@ router.get("/remove-liquidity", async (req: Request, res: Response) => {
     const token0 = pool.token0 as Token;
     const token1 = pool.token1 as Token;
 
-    const deadline = BigInt(Math.floor(Date.now() / 1000) + 1200);
+    const deadline = (Math.floor(Date.now() / 1000) + 1200).toString();
     const slippagePct = new Percent(slippage, 10_000);
     const liquidityPct = new Percent(liquidityPercent, 100);
 
